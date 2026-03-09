@@ -580,14 +580,14 @@ html, body {
   <div class="modal-box">
     <div class="modal-logo">⚡ NEXUS</div>
     <div class="modal-sub">
-      Zadej svůj <strong>Anthropic API klíč</strong> pro aktivaci NEXUS AI coacha.<br>
+      Zadej svůj <strong>Google Gemini API klíč</strong> pro aktivaci NEXUS AI coacha.<br>
       Klíč je uložen pouze v tvém prohlížeči — nikde jinde.
     </div>
-    <input class="modal-input" type="password" id="apiKeyInput" placeholder="sk-ant-api03-..." autocomplete="off">
+    <input class="modal-input" type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off">
     <button class="modal-btn" onclick="saveKey()">AKTIVOVAT NEXUS</button>
     <div class="modal-note">
-      🔒 Klíč opouští jen tvůj prohlížeč → Anthropic API<br>
-      Nemáš klíč? <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
+      🔒 Klíč opouští jen tvůj prohlížeč → Google Gemini API<br>
+      Nemáš klíč? <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a>
     </div>
   </div>
 </div>
@@ -757,7 +757,7 @@ TVŮJ KOMUNIKAČNÍ STYL:
    STATE
 ════════════════════════════════════════════════════════════════ */
 let apiKey = localStorage.getItem('nx_key') || '';
-let history = [];
+let history = []; // [{role:'user'|'model', parts:[{text:'...'}]}]
 let busy = false;
 const todayKey = new Date().toISOString().slice(0, 10);
 let habits = loadHabits();
@@ -882,28 +882,24 @@ async function send() {
   addMsg('user', text);
   input.value = '';
   input.style.height = 'auto';
-  history.push({ role: 'user', content: text });
+  history.push({ role: 'user', parts: [{ text }] });
 
   showTyping();
   busy = true;
   document.getElementById('sendBtn').disabled = true;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        system: SYSTEM + habitsContext(),
-        messages: history,
-      }),
-    });
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM + habitsContext() }] },
+          contents: history,
+        }),
+      }
+    );
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -911,8 +907,8 @@ async function send() {
     }
 
     const data = await res.json();
-    const reply = data.content?.[0]?.text || '…';
-    history.push({ role: 'assistant', content: reply });
+    const reply = data.candidates[0].content.parts[0].text;
+    history.push({ role: 'model', parts: [{ text: reply }] });
     hideTyping();
     addMsg('assistant', reply);
 
