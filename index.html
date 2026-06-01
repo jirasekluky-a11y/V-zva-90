@@ -583,10 +583,9 @@
     background: var(--bg3);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 14px 16px;
     margin-bottom: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
+    overflow: hidden;
+    transition: border-color 0.2s;
   }
 
   .log-day:hover { border-color: var(--gold); }
@@ -595,6 +594,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding: 14px 16px;
+    cursor: pointer;
   }
 
   .log-day-num {
@@ -623,20 +624,81 @@
   .log-bar {
     height: 3px;
     background: var(--bg4);
-    border-radius: 2px;
-    margin-top: 10px;
     overflow: hidden;
   }
 
   .log-bar-fill {
     height: 100%;
     background: var(--green);
-    border-radius: 2px;
     transition: width 0.5s ease;
   }
 
   .log-bar-fill.partial { background: var(--gold); }
   .log-bar-fill.fail { background: var(--red); }
+
+  .log-day-body {
+    display: none;
+    padding: 0 16px 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .log-day-body.open { display: block; animation: fadeIn 0.2s ease; }
+
+  .log-field { margin-top: 14px; }
+
+  .log-field-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .log-field-label.green { color: var(--green2); }
+  .log-field-label.red { color: #e05a4a; }
+  .log-field-label.gold { color: var(--gold); }
+
+  .log-textarea {
+    width: 100%;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    resize: none;
+    min-height: 70px;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+  }
+
+  .log-textarea:focus { border-color: var(--gold); }
+  .log-textarea::placeholder { color: var(--text3); font-style: italic; }
+
+  .log-save-indicator {
+    font-family: 'Space Mono', monospace;
+    font-size: 8px;
+    color: var(--text3);
+    letter-spacing: 0.1em;
+    text-align: right;
+    margin-top: 4px;
+    height: 12px;
+  }
+
+  .log-chevron {
+    font-size: 11px;
+    color: var(--text3);
+    transition: transform 0.2s;
+    margin-left: 8px;
+    flex-shrink: 0;
+  }
+
+  .log-day.expanded .log-chevron { transform: rotate(180deg); }
 
   /* ─── OVERVIEW ─── */
   .stats-grid {
@@ -1450,11 +1512,12 @@ async function loadUserData() {
   }
 
   // load everything in parallel
-  const [hSnap, lSnap, rSnap, pSnap] = await Promise.all([
+  const [hSnap, lSnap, rSnap, pSnap, jSnap] = await Promise.all([
     getDocs(habitsRef()),
     getDocs(logsRef()),
     getDocs(rulesRef()),
-    getDocs(punishmentsRef())
+    getDocs(punishmentsRef()),
+    getDocs(collection(db, 'users', currentUser.uid, 'journal'))
   ]);
 
   habits = hSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1465,6 +1528,8 @@ async function loadUserData() {
 
   rules = rSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   punishments = pSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  jSnap.docs.forEach(d => { journalData[d.id] = d.data(); });
 
   viewingDay = today();
   renderAll();
@@ -1653,6 +1718,21 @@ function renderHabitsMgmt() {
 }
 
 // ─── LOG ───
+const journalData = {}; // { dateStr: { win, fail, note } }
+const saveTimers = {};
+
+async function saveJournalField(dateStr, field, value) {
+  if (!journalData[dateStr]) journalData[dateStr] = {};
+  journalData[dateStr][field] = value;
+  const ref = doc(db, 'users', currentUser.uid, 'journal', dateStr);
+  await setDoc(ref, journalData[dateStr], { merge: true });
+}
+
+async function loadJournalData() {
+  const snap = await getDocs(collection(db, 'users', currentUser.uid, 'journal'));
+  snap.docs.forEach(d => { journalData[d.id] = d.data(); });
+}
+
 function renderLog() {
   const container = document.getElementById('log-list');
   container.innerHTML = '';
@@ -1670,27 +1750,74 @@ function renderLog() {
   days.forEach(dateStr => {
     const pct = getDayPct(dateStr);
     const dn2 = dayNum(dateStr);
+    const fillClass = pct === 100 ? '' : pct >= 50 ? 'partial' : 'fail';
+    const journal = journalData[dateStr] || {};
+    const hasContent = journal.win || journal.fail || journal.note;
+
     const item = document.createElement('div');
     item.className = 'log-day';
-    const fillClass = pct === 100 ? '' : pct >= 50 ? 'partial' : 'fail';
     item.innerHTML = `
       <div class="log-day-header">
-        <div>
-          <div class="log-day-num">${String(dn2).padStart(2,'0')}</div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:baseline;gap:10px">
+            <div class="log-day-num">${String(dn2).padStart(2,'0')}</div>
+            ${hasContent ? '<span style="font-size:10px;color:var(--gold);font-family:Space Mono,monospace">●</span>' : ''}
+          </div>
           <div class="log-day-date">${formatDate(dateStr)}</div>
         </div>
-        <div class="log-pct" style="color:${pct===100?'var(--green)':pct>=50?'var(--gold)':'var(--red)'}">${pct}%</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="log-pct" style="color:${pct===100?'var(--green2)':pct>=50?'var(--gold)':'#e05a4a'}">${pct}%</div>
+          <div class="log-chevron">▾</div>
+        </div>
       </div>
       <div class="log-bar"><div class="log-bar-fill ${fillClass}" style="width:${pct}%"></div></div>
+      <div class="log-day-body">
+        <div class="log-field">
+          <div class="log-field-label green">✓ Co se povedlo</div>
+          <textarea class="log-textarea" data-field="win" placeholder="Dnes se mi povedlo...">${journal.win || ''}</textarea>
+          <div class="log-save-indicator" data-indicator="win"></div>
+        </div>
+        <div class="log-field">
+          <div class="log-field-label red">✕ Co se nepovedlo</div>
+          <textarea class="log-textarea" data-field="fail" placeholder="Dnes mi nešlo...">${journal.fail || ''}</textarea>
+          <div class="log-save-indicator" data-indicator="fail"></div>
+        </div>
+        <div class="log-field">
+          <div class="log-field-label gold">◎ Poznámky</div>
+          <textarea class="log-textarea" data-field="note" placeholder="Poznámky ke dni...">${journal.note || ''}</textarea>
+          <div class="log-save-indicator" data-indicator="note"></div>
+        </div>
+      </div>
     `;
-    item.addEventListener('click', () => {
-      viewingDay = dateStr;
-      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-      document.querySelector('[data-screen="dnes"]').classList.add('active');
-      document.getElementById('screen-dnes').classList.add('active');
-      renderDnes();
+
+    // toggle expand
+    const header = item.querySelector('.log-day-header');
+    const body = item.querySelector('.log-day-body');
+    header.addEventListener('click', () => {
+      item.classList.toggle('expanded');
+      body.classList.toggle('open');
     });
+
+    // autosave on input
+    item.querySelectorAll('.log-textarea').forEach(textarea => {
+      const field = textarea.dataset.field;
+      const indicator = item.querySelector(`[data-indicator="${field}"]`);
+      textarea.addEventListener('input', () => {
+        indicator.textContent = 'ukládám...';
+        indicator.style.color = 'var(--text3)';
+        clearTimeout(saveTimers[dateStr + field]);
+        saveTimers[dateStr + field] = setTimeout(async () => {
+          await saveJournalField(dateStr, field, textarea.value);
+          indicator.textContent = 'uloženo ✓';
+          indicator.style.color = 'var(--green2)';
+          setTimeout(() => { indicator.textContent = ''; }, 2000);
+          renderLog(); // refresh dot indicator
+        }, 800);
+      });
+      // prevent header click when clicking textarea
+      textarea.addEventListener('click', e => e.stopPropagation());
+    });
+
     container.appendChild(item);
   });
 }
@@ -2095,3 +2222,4 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 </script>
 </body>
 </html>
+
