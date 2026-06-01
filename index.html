@@ -1569,7 +1569,7 @@ function renderDnes() {
     return num >= 1 && num <= 90 && getDayPct(d) === 100;
   }).length;
   document.getElementById('stat-perf').textContent = perfDays;
-  document.getElementById('stat-zbývá').textContent = Math.max(0, 90 - dn);
+  document.getElementById('stat-zbyvá').textContent = Math.max(0, 90 - dn);
 
   // day nav
   document.getElementById('day-nav-label').textContent = isToday ? 'DNES' : formatDate(viewingDay).toUpperCase();
