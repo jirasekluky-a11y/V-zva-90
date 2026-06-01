@@ -1448,19 +1448,22 @@ async function loadUserData() {
       createdAt: new Date().toISOString()
     });
   }
-  // habits
-  const hSnap = await getDocs(habitsRef());
+
+  // load everything in parallel
+  const [hSnap, lSnap, rSnap, pSnap] = await Promise.all([
+    getDocs(habitsRef()),
+    getDocs(logsRef()),
+    getDocs(rulesRef()),
+    getDocs(punishmentsRef())
+  ]);
+
   habits = hSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   habits.sort((a,b) => (a.order||0) - (b.order||0));
-  // logs
-  const lSnap = await getDocs(logsRef());
+
   logs = {};
   lSnap.docs.forEach(d => { logs[d.id] = d.data(); });
-  // rules
-  const rSnap = await getDocs(rulesRef());
+
   rules = rSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  // punishments
-  const pSnap = await getDocs(punishmentsRef());
   punishments = pSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   viewingDay = today();
@@ -1722,15 +1725,15 @@ function renderOverview() {
     const dateStr = d.toISOString().slice(0,10);
     const pct = getDayPct(dateStr);
     const isToday2 = dateStr === today();
-    const isFuture = dayNum(dateStr) > dn;
+    const isPast = dayNum(dateStr) < dn;
     const cell = document.createElement('div');
     cell.className = 'grid-cell';
     cell.textContent = i;
     if (isToday2) cell.classList.add('today');
-    else if (!isFuture && count > 0) {
+    else if (isPast) {
       if (pct === 100) cell.classList.add('done');
       else if (pct >= 50) cell.classList.add('partial');
-      else if (pct < 50 && Object.keys(logs[dateStr]||{}).length > 0) cell.classList.add('fail');
+      else if (Object.keys(logs[dateStr]||{}).length > 0) cell.classList.add('fail');
     }
     cell.addEventListener('click', () => {
       viewingDay = dateStr;
